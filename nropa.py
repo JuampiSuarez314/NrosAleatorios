@@ -14,6 +14,7 @@ ALPHA = 0.05
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "Resultado"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+LINEA = "=" * 72
 
 
 @dataclass
@@ -42,6 +43,39 @@ def prompt_path(texto: str) -> Path:
         if ruta.exists():
             return ruta
         print("No existe esa ruta. Intente otra vez.")
+
+
+def limpiar_pantalla() -> None:
+    print("\n" * 2)
+
+
+def titulo(texto: str) -> None:
+    print(LINEA)
+    print(texto.center(len(LINEA)))
+    print(LINEA)
+
+
+def mostrar_menu() -> None:
+    titulo("NroPA")
+    print("1) Cargar CSV")
+    print("2) Generar numeros")
+    print("3) Salir")
+    print(LINEA)
+
+
+def mostrar_bloque_resultado(numero: int, res: TestResult) -> None:
+    print(f"[{numero}] {res.nombre}")
+    print(f"    {'Estadistico':<12}: {res.estadistico:.6f}")
+    print(f"    {'Critico':<12}: {res.critico}")
+    print(f"    {'Decision':<12}: {res.decision}")
+    print(f"    {'Detalle':<12}: {res.detalle}")
+    print(LINEA)
+
+
+def resumen_entrada(origen: str, cantidad: int) -> None:
+    print(f"Origen   : {origen}")
+    print(f"Cantidad : {cantidad}")
+    print(LINEA)
 
 
 def generate_lcg(n: int, seed: int = 123456789) -> list[float]:
@@ -287,60 +321,66 @@ def write_xlsx(path: Path, sheets: dict[str, list[list[object]]]) -> None:
 
 
 def mostrar_resultado(res: TestResult) -> None:
-    print(f"{res.nombre}: {res.estadistico:.6f} | critico: {res.critico} | {res.decision}")
-    print(f"  {res.detalle}")
+    mostrar_bloque_resultado(0, res)
 
 
 def main() -> int:
-    print("Generador y pruebas de numeros pseudosaleatorios")
-    print("1) Cargar CSV")
-    print("2) Generar numeros")
-    opcion = input("Elija una opcion: ").strip()
+    while True:
+        limpiar_pantalla()
+        mostrar_menu()
+        opcion = input("Elija una opcion: ").strip()
 
-    if opcion == "1":
-        ruta = prompt_path("Ruta del CSV: ")
-        nums = load_numbers_from_csv(ruta)
-        origen = f"CSV: {ruta}"
-    elif opcion == "2":
-        n = prompt_int("Cuantos numeros quiere generar: ")
-        nums = generate_lcg(n)
-        origen = f"Generados LCG ({n})"
-    else:
-        print("Opcion invalida.")
-        return 1
+        if opcion == "3":
+            print("Fin.")
+            return 0
 
-    if len(nums) < 2:
-        print("No hay suficientes numeros para evaluar.")
-        return 1
+        if opcion == "1":
+            ruta = prompt_path("Ruta del CSV: ")
+            nums = load_numbers_from_csv(ruta)
+            origen = f"CSV: {ruta}"
+        elif opcion == "2":
+            n = prompt_int("Cuantos numeros quiere generar: ")
+            nums = generate_lcg(n)
+            origen = f"Generados LCG ({n})"
+        else:
+            print("Opcion invalida.")
+            input("Enter para continuar...")
+            continue
 
-    print(f"Total de numeros: {len(nums)}")
-    validate_unit_interval(nums)
+        if len(nums) < 2:
+            print("No hay suficientes numeros para evaluar.")
+            input("Enter para continuar...")
+            continue
 
-    pruebas = [prueba_medias, prueba_chi_cuadrada, prueba_varianza, prueba_corridas_arriba_abajo]
-    resultados = []
-    for prueba in pruebas:
-        print(f"Ejecutando {prueba.__name__}...")
-        res = prueba(nums)
-        mostrar_resultado(res)
-        resultados.append(res)
+        titulo("Pruebas")
+        resumen_entrada(origen, len(nums))
+        validate_unit_interval(nums)
 
-    salida = OUTPUT_DIR / f"resultado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    filas_numeros = [["Indice", "Numero"]] + [[i + 1, x] for i, x in enumerate(nums)]
-    filas_resultados = [["Prueba", "Estadistico", "Critico", "Decision", "Detalle"]]
-    filas_resultados += [[r.nombre, r.estadistico, r.critico, r.decision, r.detalle] for r in resultados]
-    filas_resumen = [["Origen", origen], ["Cantidad", len(nums)], ["Fecha", datetime.now().isoformat(timespec="seconds")]]
+        pruebas = [prueba_medias, prueba_chi_cuadrada, prueba_varianza, prueba_corridas_arriba_abajo]
+        resultados = []
+        for idx, prueba in enumerate(pruebas, start=1):
+            print(f"Ejecutando {prueba.__name__}...")
+            res = prueba(nums)
+            mostrar_bloque_resultado(idx, res)
+            resultados.append(res)
 
-    write_xlsx(
-        salida,
-        {
-            "Numeros": filas_numeros,
-            "Resultados": filas_resultados,
-            "Resumen": filas_resumen,
-        },
-    )
+        salida = OUTPUT_DIR / f"resultado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        filas_numeros = [["Indice", "Numero"]] + [[i + 1, x] for i, x in enumerate(nums)]
+        filas_resultados = [["Prueba", "Estadistico", "Critico", "Decision", "Detalle"]]
+        filas_resultados += [[r.nombre, r.estadistico, r.critico, r.decision, r.detalle] for r in resultados]
+        filas_resumen = [["Origen", origen], ["Cantidad", len(nums)], ["Fecha", datetime.now().isoformat(timespec="seconds")]]
 
-    print(f"Excel generado en: {salida}")
-    return 0
+        write_xlsx(
+            salida,
+            {
+                "Numeros": filas_numeros,
+                "Resultados": filas_resultados,
+                "Resumen": filas_resumen,
+            },
+        )
+
+        print(f"Excel generado en: {salida}")
+        input("Enter para volver al menu...")
 
 
 if __name__ == "__main__":
