@@ -15,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "Resultado"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 LINEA = "=" * 72
+MAX_NUMEROS_EXCEL = 1_048_575
 
 
 @dataclass
@@ -26,15 +27,20 @@ class TestResult:
     detalle: str
 
 
-def prompt_int(texto: str, minimo: int = 1) -> int:
+def prompt_int(texto: str, minimo: int = 1, maximo: int | None = None) -> int:
     while True:
         try:
             valor = int(input(texto).strip())
             if valor < minimo:
                 raise ValueError
+            if maximo is not None and valor > maximo:
+                raise ValueError
             return valor
         except ValueError:
-            print(f"Ingrese un entero valido mayor o igual a {minimo}.")
+            if maximo is None:
+                print(f"Ingrese un entero valido mayor o igual a {minimo}.")
+            else:
+                print(f"Ingrese un entero valido entre {minimo} y {maximo}.")
 
 
 def prompt_path(texto: str) -> Path:
@@ -59,7 +65,8 @@ def mostrar_menu() -> None:
     titulo("NroPA")
     print("1) Cargar CSV")
     print("2) Generar numeros")
-    print("3) Salir")
+    print("3) Formato del archivo a cargar")
+    print("4) Salir")
     print(LINEA)
 
 
@@ -124,7 +131,71 @@ def load_numbers_from_csv(path: Path) -> list[float]:
 
 def validate_unit_interval(nums: list[float]) -> None:
     if any(not (0.0 <= x < 1.0) for x in nums):
-        print("Aviso: hay valores fuera de [0,1). Las pruebas asumen uniformes en ese rango.")
+        raise ValueError("hay valores fuera de [0,1)")
+
+
+def mostrar_formato_entrada() -> None:
+    titulo("Formato de carga")
+    print("El programa carga CSV exportados desde Excel.")
+    print("Use una sola columna con numeros decimales, sin encabezados.")
+    print("Todos los valores deben estar entre 0 y 1, sin incluir el 1.")
+    print("Si arma el archivo en Excel, guardelo como CSV antes de cargarlo.")
+    print(LINEA)
+    input("Enter para volver al menu...")
+
+
+def mostrar_numeros_de_a_uno(nums: list[float]) -> None:
+    titulo("Numeros uno a uno")
+    print("Presione Enter para avanzar. Es un enganche para futuras opciones.")
+    print(LINEA)
+    for i, x in enumerate(nums, start=1):
+        print(f"[{i}] {x:.12f}")
+        if i < len(nums):
+            input("Enter para ver el siguiente...")
+    print(LINEA)
+    input("Fin de la lista. Enter para continuar...")
+
+
+def menu_posterior(nums: list[float], origen: str) -> bool:
+    while True:
+        titulo("Datos evaluados")
+        resumen_entrada(origen, len(nums))
+        print("1) Mostrar numeros uno a uno")
+        print("2) Volver al menu principal")
+        print(LINEA)
+        opcion = input("Elija una opcion: ").strip()
+        if opcion == "1":
+            mostrar_numeros_de_a_uno(nums)
+            continue
+        if opcion == "2":
+            return False
+        print("Opcion invalida.")
+        input("Enter para continuar...")
+
+
+def mostrar_resumen_rechazo(resultados: list[TestResult]) -> None:
+    aceptadas = [r.nombre for r in resultados if r.decision == "Se acepta H0"]
+    rechazadas = [r.nombre for r in resultados if r.decision == "Se rechaza H0"]
+    no_evaluables = [r.nombre for r in resultados if r.decision not in {"Se acepta H0", "Se rechaza H0"}]
+
+    titulo("Resumen de pruebas")
+    if aceptadas:
+        print("No rechazaron el conjunto:")
+        for nombre in aceptadas:
+            print(f"- {nombre}")
+    else:
+        print("Ninguna prueba quedo en no rechazo.")
+
+    if rechazadas:
+        print("Rechazaron el conjunto:")
+        for nombre in rechazadas:
+            print(f"- {nombre}")
+
+    if no_evaluables:
+        print("No evaluables:")
+        for nombre in no_evaluables:
+            print(f"- {nombre}")
+    print(LINEA)
 
 
 def z_critico(alpha: float = ALPHA) -> float:
@@ -326,61 +397,78 @@ def mostrar_resultado(res: TestResult) -> None:
 
 def main() -> int:
     while True:
-        limpiar_pantalla()
-        mostrar_menu()
-        opcion = input("Elija una opcion: ").strip()
+        try:
+            limpiar_pantalla()
+            mostrar_menu()
+            opcion = input("Elija una opcion: ").strip()
 
-        if opcion == "3":
-            print("Fin.")
-            return 0
+            if opcion == "4":
+                print("Fin.")
+                return 0
 
-        if opcion == "1":
-            ruta = prompt_path("Ruta del CSV: ")
-            nums = load_numbers_from_csv(ruta)
-            origen = f"CSV: {ruta}"
-        elif opcion == "2":
-            n = prompt_int("Cuantos numeros quiere generar: ")
-            nums = generate_lcg(n)
-            origen = f"Generados LCG ({n})"
-        else:
-            print("Opcion invalida.")
-            input("Enter para continuar...")
-            continue
+            if opcion == "1":
+                ruta = prompt_path("Ruta del CSV: ")
+                nums = load_numbers_from_csv(ruta)
+                origen = f"CSV: {ruta}"
+            elif opcion == "2":
+                print(f"Maximo posible para exportar a Excel: {MAX_NUMEROS_EXCEL}")
+                n = prompt_int(
+                    f"Cuantos numeros quiere generar (maximo {MAX_NUMEROS_EXCEL}): ",
+                    maximo=MAX_NUMEROS_EXCEL,
+                )
+                nums = generate_lcg(n)
+                origen = f"Generados LCG ({n})"
+            elif opcion == "3":
+                mostrar_formato_entrada()
+                continue
+            else:
+                print("Opcion invalida.")
+                input("Enter para continuar...")
+                continue
 
-        if len(nums) < 2:
-            print("No hay suficientes numeros para evaluar.")
-            input("Enter para continuar...")
-            continue
+            if len(nums) < 2:
+                print("No hay suficientes numeros para evaluar.")
+                input("Enter para continuar...")
+                continue
 
-        titulo("Pruebas")
-        resumen_entrada(origen, len(nums))
-        validate_unit_interval(nums)
+            validate_unit_interval(nums)
 
-        pruebas = [prueba_medias, prueba_chi_cuadrada, prueba_varianza, prueba_corridas_arriba_abajo]
-        resultados = []
-        for idx, prueba in enumerate(pruebas, start=1):
-            print(f"Ejecutando {prueba.__name__}...")
-            res = prueba(nums)
-            mostrar_bloque_resultado(idx, res)
-            resultados.append(res)
+            titulo("Pruebas")
+            resumen_entrada(origen, len(nums))
 
-        salida = OUTPUT_DIR / f"resultado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        filas_numeros = [["Indice", "Numero"]] + [[i + 1, x] for i, x in enumerate(nums)]
-        filas_resultados = [["Prueba", "Estadistico", "Critico", "Decision", "Detalle"]]
-        filas_resultados += [[r.nombre, r.estadistico, r.critico, r.decision, r.detalle] for r in resultados]
-        filas_resumen = [["Origen", origen], ["Cantidad", len(nums)], ["Fecha", datetime.now().isoformat(timespec="seconds")]]
+            pruebas = [prueba_medias, prueba_chi_cuadrada, prueba_varianza, prueba_corridas_arriba_abajo]
+            resultados = []
+            for idx, prueba in enumerate(pruebas, start=1):
+                print(f"Ejecutando {prueba.__name__}...")
+                res = prueba(nums)
+                mostrar_bloque_resultado(idx, res)
+                resultados.append(res)
 
-        write_xlsx(
-            salida,
-            {
-                "Numeros": filas_numeros,
-                "Resultados": filas_resultados,
-                "Resumen": filas_resumen,
-            },
-        )
+            salida = OUTPUT_DIR / f"resultado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            filas_numeros = [["Indice", "Numero"]] + [[i + 1, x] for i, x in enumerate(nums)]
+            filas_resultados = [["Prueba", "Estadistico", "Critico", "Decision", "Detalle"]]
+            filas_resultados += [[r.nombre, r.estadistico, r.critico, r.decision, r.detalle] for r in resultados]
+            filas_resumen = [["Origen", origen], ["Cantidad", len(nums)], ["Fecha", datetime.now().isoformat(timespec="seconds")]]
 
-        print(f"Excel generado en: {salida}")
-        input("Enter para volver al menu...")
+            write_xlsx(
+                salida,
+                {
+                    "Numeros": filas_numeros,
+                    "Resultados": filas_resultados,
+                    "Resumen": filas_resumen,
+                },
+            )
+
+            mostrar_resumen_rechazo(resultados)
+            print(f"Excel generado en: {salida}")
+
+            if not menu_posterior(nums, origen):
+                continue
+
+            input("Enter para volver al menu...")
+        except ValueError as exc:
+            print(f"Entrada invalida: {exc}")
+            input("Enter para volver al menu...")
 
 
 if __name__ == "__main__":
